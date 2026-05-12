@@ -39,6 +39,16 @@ fun ProductScreen(
     val scope = rememberCoroutineScope()
     
     val currentUser = FirebaseAuth.getInstance().currentUser
+    val isLoading by viewModel.isLoading.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
+    val isAdmin by viewModel.isAdmin.collectAsState()
+
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearToast()
+        }
+    }
 
     // Hộp thoại xác nhận xóa
     if (showDeleteDialog && productToDelete != null) {
@@ -55,9 +65,6 @@ fun ProductScreen(
                         productToDelete?.let { viewModel.deleteProduct(it) }
                         showDeleteDialog = false
                         productToDelete = null
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Đã xóa sản phẩm")
-                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
@@ -115,7 +122,12 @@ fun ProductScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(text = "Dữ liệu sản phẩm", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (isAdmin) "Dữ liệu sản phẩm (ADMIN)" else "Dữ liệu sản phẩm", 
+                            fontSize = 20.sp, 
+                            fontWeight = FontWeight.Bold,
+                            color = if (isAdmin) Color.Red else Color.Unspecified
+                        )
                         Text(text = "Chào: ${currentUser?.email ?: "Người dùng"}", fontSize = 12.sp, color = Color.Gray)
                     }
                     IconButton(onClick = { showLogoutDialog = true }) {
@@ -166,9 +178,6 @@ fun ProductScreen(
 
                         if (editingProduct == null) {
                             viewModel.addProduct(name, type, priceValue)
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Thêm sản phẩm thành công")
-                            }
                         } else {
                             viewModel.updateProduct(
                                 editingProduct!!.id,
@@ -177,17 +186,19 @@ fun ProductScreen(
                                 priceValue
                             )
                             editingProduct = null
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Cập nhật sản phẩm thành công")
-                            }
                         }
                         name = ""
                         type = ""
                         price = ""
                     },
+                    enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (editingProduct == null) "THÊM SẢN PHẨM" else "CẬP NHẬT SẢN PHẨM")
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text(if (editingProduct == null) "THÊM SẢN PHẨM" else "CẬP NHẬT SẢN PHẨM")
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -197,6 +208,8 @@ fun ProductScreen(
                     items(viewModel.products) { product ->
                         ProductItem(
                             product = product,
+                            isAdmin = isAdmin,
+                            currentUserId = currentUser?.uid ?: "",
                             onEdit = {
                                 editingProduct = product
                                 name = product.name
@@ -212,7 +225,6 @@ fun ProductScreen(
                 }
             }
 
-            // Hiển thị Snackbar ở phía trên cùng
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
@@ -222,7 +234,16 @@ fun ProductScreen(
 }
 
 @Composable
-fun ProductItem(product: Product, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun ProductItem(
+    product: Product, 
+    isAdmin: Boolean,
+    currentUserId: String,
+    onEdit: () -> Unit, 
+    onDelete: () -> Unit
+) {
+    // Chỉ hiện nút Sửa/Xóa nếu là Admin hoặc là chủ sở hữu của sản phẩm đó
+    val canEdit = isAdmin || product.userId == currentUserId
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -239,13 +260,18 @@ fun ProductItem(product: Product, onEdit: () -> Unit, onDelete: () -> Unit) {
                 Text(text = "Tên sp: ${product.name}", fontWeight = FontWeight.Bold)
                 Text(text = "Giá sp: ${product.price}")
                 Text(text = "Loại sp: ${product.type}")
-            }
-            Column {
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Yellow)
+                if (isAdmin) {
+                    Text(text = "Người đăng: ${product.userId}", fontSize = 10.sp, color = Color.Gray)
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+            }
+            if (canEdit) {
+                Column {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Yellow)
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                    }
                 }
             }
         }
